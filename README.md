@@ -6,6 +6,11 @@ Reduced-Order Modeling for Phase Change Materials (PCM) including pure conductiv
   <img src="docs/podrbfoffline1.png" width="900">
 </p>
 
+# Examples
+
+from rompcm.inference import PODRBFInference
+u = model.predict_time(...)
+
 ## 1. Conductive PCM regime
 In the conductive regime the temperature equation is governing by:
 
@@ -19,9 +24,9 @@ T &= 1.075, \qquad  \text{on } \partial \Gamma_l \\
 $$
 
 <div align="center">
-  <img src="docs/Tcondt.parav.final.png" width="300"/>
-  <img src="docs/Trcondt.parav.final.png" width="300"/>
-  <img src="docs/Tdfcondt.parav.final.png" width="300"/><br>
+  <img src="docs/Tcondt.parav.final.png" width="290"/>
+  <img src="docs/Trcondt.parav.final.png" width="290"/>
+  <img src="docs/Tdfcondt.parav.final.png" width="290"/><br>
   <em>Comparaion between FOM and ROM temperature fields</em>
 </div>
 
@@ -43,8 +48,14 @@ $$
 $$
 
 <div align="center">
-  <img src="docs/Tconvt.parav.final.png" width="300"/>
-  <img src="docs/Trconvt.parav.final.png" width="300"/>
-  <img src="docs/Tdfconvt.parav.final.png" width="300"/><br>
+  <img src="docs/Tconvt.parav.final.png" width="290"/>
+  <img src="docs/Trconvt.parav.final.png" width="290"/>
+  <img src="docs/Tdfconvt.parav.final.png" width="290"/><br>
   <em>Comparaion between FOM and ROM temperature fields</em>
 </div>
+
+# Instalation
+Requirements: Python, Pyffem
+
+python -m venv rompcm
+pip install -e .
