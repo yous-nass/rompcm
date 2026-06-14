@@ -1,0 +1,189 @@
+// ----------------------------------
+// Phase-change operators
+// ----------------------------------
+real eps = 0.01, Ste = 1./0.045;
+real Pr=56.2,Ra=3.27e5;
+real IRa = Ra/Pr, IRe = 1., IPr=1./56.2;
+
+// Carman-Kozeny ---------------------------------------
+real CCK = 1e6 , bmushy = 1e-7, gamma = 1e-7;
+
+macro S(T)  ( Ste - Ste*0.5*(1.+tanh((eps - T)/eps)) ) //
+macro dS(T) ( 0.5*Ste/eps/pow(cosh((eps - T)/eps),2) ) //
+
+macro fB(T)  (IRa*T)//
+macro dfB(T) (IRa)//
+
+macro Fmushy(T)( 1. - 0.5*(1.+tanh((eps-T)/eps)) ) // 
+macro dFmushy(T)(0.5/eps/pow(cosh((eps-T)/eps),2) ) // 
+macro Amushy(T)(-CCK * pow(1.-Fmushy(T),2) / ( pow(Fmushy(T),3)+bmushy ))//
+macro dAmushy(T)(2.*dFmushy(T)*(CCK*(1.-Fmushy(T))-1.5*Amushy(T)*pow(Fmushy(T),2))/(pow(Fmushy(T),3)+bmushy))// 
+
+// ── Helper functions ───────────
+macro grad(u) [dx(u), dy(u)]   //
+
+
+macro centersnap(snap, snapmean)
+{
+   for (int i = 0; i < Nsnapshots; i++) snapmean[] += snap[i][];
+   snapmean[] /= Nsnapshots;
+   for (int i = 0; i < Nsnapshots; i++) snap[i][] -= snapmean[];
+} //
+
+
+macro podofflinebasis(Phi, snap, snapmean, Nr, epsenergy, pathname, savebasis){
+    real[int] ev(Nsnapshots);
+    real[int,int] C(Nsnapshots, Nsnapshots);
+    real[int,int] eVec(Nsnapshots,Nsnapshots);
+
+    real[int,int] II(Nsnapshots, Nsnapshots);
+    II=0;
+    C = 0.;
+    for (int i = 0; i < Nsnapshots; i++) {
+        C(i,i) = int2d(Mh, qforder=6)(snap[i]*snap[i]);
+        for (int j = i+1; j < Nsnapshots; j++) {
+            real cij = int2d(Mh, qforder=6)(snap[i]*snap[j]);
+            C(i,j) = cij; C(j,i) = cij;
+        }
+    }
+    
+    for (int i=0;i<Nsnapshots;i++) II(i,i)=1.;
+
+    int k1=dsygvd(C,II,ev,eVec);
+    
+    real totalEnergy = 0., epsratio  = 1.e-14;
+    for (int i = 0; i < Nsnapshots; i++) if (ev(i) > 0.) totalEnergy += ev(i);
+    real lambda1 = ev(Nsnapshots - 1);
+    real cumE = 0.;
+    int  Nrenergy = 0, Nrratio = 0;
+    for (int i = 0; i < Nsnapshots; i++) {
+        real lami = ev(Nsnapshots - 1 - i);
+        if (lami / lambda1 > epsratio) Nrratio++;
+        if (lami > 0.) {
+            cumE += lami;
+            if (Nrenergy == 0 && cumE / totalEnergy >= 1. - epsenergy)
+                Nrenergy = i + 1;
+        }
+    }
+    if (Nrenergy == 0) Nrenergy = Nsnapshots;
+    int N = min(Nrenergy, Nrratio);
+    Nr = min(N, Nr);
+    cout << "Nr selected: " << Nr
+         << "  (energy=" << Nrenergy << ", ratio=" << Nrratio << ")" << endl;
+     
+    for (int i=0;i<Nr;i++){
+      Phi[i][]=0.;
+      for (int j=0;j<Nsnapshots;j++){
+        Phi[i][]+=eVec(j,Nsnapshots-1-i)*snap[j][]; 
+      }
+      Phi[i][]/= sqrt(ev(Nsnapshots-1-i));    
+      
+      if (i < 5) {
+          real nrm = sqrt(int2d(Mh, qforder=6)(Phi[i]*Phi[i]));
+          cout << "  ||phi_" << i << "||_L2 = " << nrm
+               << "  (should be 1.0)" << endl;
+      }
+    }
+    
+    if(savebasis)
+    {
+        exec("mkdir -p " + pathname);
+    
+        ofstream feig(pathname + "eigenvalues.dat");
+        feig.precision(16);
+        for (int k = 0; k < Nr; k++)
+            feig << k+1 << " " << ev(Nsnapshots-1-k) << "\n";
+        cout << "Saved eigenvalues.dat" << endl;
+
+        for (int i = 0; i < Nr; i++) {
+            ofstream fphi(pathname + "phi_" + i + ".txt");
+            fphi.precision(16);
+            for (int j = 0; j < Ndof; j++)
+                fphi << Phi[i][][j] << "\n";
+        }
+        cout << "POD basis built with Nr = " << Nr << "  saved in " << pathname << endl;
+
+    
+        ofstream fm(pathname + "snapmean.txt");
+        fm.precision(16);
+        for (int j = 0; j < Ndof; j++)
+            fm << snapmean[][j] << "\n";
+        cout << "Saved snapmean.txt" << endl;
+    }
+} //
+
+
+// Reduced stiffness matrix  Kr
+macro reducedstiffmatix(Kr, Phi, Nr)
+{
+  for (int i = 0; i < Nr; i++) {
+      Kr(i,i) = int2d(Mh, qforder=6)( grad(Phi[i])' * grad(Phi[i]) );
+      for (int j = i+1; j < Nr; j++) {
+          real kij = int2d(Mh, qforder=6)( grad(Phi[i])' * grad(Phi[j]) );
+          Kr(i,j) = kij;  Kr(j,i) = kij;
+      }
+  }
+} //
+
+macro podofflinecoef(ac, snap, Phi, Nr)
+{
+    for (int i = 0; i < Nr; i++)
+    {
+      ac[i] = int2d(Mh,qforder=6)( snap * Phi[i] );
+    }
+} //
+
+macro reconstruct(Tr, Tbar, Phi, ac, Nr)
+{
+    Tr = Tbar;
+    for (int ii = 0; ii < Nr; ii++)
+        Tr[] += ac[ii] * Phi[ii][];
+} //
+
+macro relativeL2error(errl2, Tr, Th)
+{
+   errl2 += int2d(Mh,qforder=6)((Th - Tr)*(Th - Tr)) / int2d(Mh, qforder=6)(Th*Th) ;
+} //
+
+macro interpolationerror(errinterp, Tsnap, Phi, a, Nr)
+{
+   real num = 0., den = 0.;
+   for (int i = 0; i < Nr; i++)
+   {
+        real aref = int2d(Mh, qforder=6)(Tsnap * Phi[i]);
+        num += (a[i] - aref)^2;
+        den += aref^2;
+   }
+
+   errinterp += num / den;
+} //
+
+
+macro pcmcondresidualerrors(errl2, resl2, T0, T1, T2, Th)
+{
+   Vh rt, TT;
+   problem residual(rt, TT) = int2d(Mh, qforder=6)(rt*TT)
+			    - int2d(Mh, qforder=6)( c1*(T2 + S(T2))*TT 
+						+ grad(T2)'*grad(TT)*IPr 
+					        - c2*(T1 + S(T1))*TT 
+						+ c3*(T0 + S(T0))*TT)
+						+ on(4, rt=T2 - beta);
+   residual;
+   resl2 += int2d(Mh,qforder=6)( rt*rt );
+   errl2 += int2d(Mh,qforder=6)((T2 - Th)*(T2 - Th)) / int2d(Mh,qforder=6)(Th*Th);
+} //
+
+macro pcmconvresidualerrors(errl2, resl2, T0, T1, T2, Th, u2, v2)
+{
+   Vh rt, TT;
+   problem residual(rt, TT) = int2d(Mh, qforder=6)(rt*TT)
+			    - int2d(Mh, qforder=6)( c1*(T2 + S(T2))*TT 
+						+ grad(T2)'*grad(TT)*IPr 
+						+ [u2, v2]'*grad(T2)*TT
+					        - c2*(T1 + S(T1))*TT 
+						+ c3*(T0 + S(T0))*TT)
+						+ on(4, rt=T2 - beta);
+   residual;
+   resl2 += int2d(Mh,qforder=6)( rt*rt );
+   errl2 += int2d(Mh,qforder=6)((T2 - Th)*(T2 - Th)) / int2d(Mh,qforder=6)(Th*Th);
+} //
