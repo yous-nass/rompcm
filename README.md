@@ -57,8 +57,9 @@ $$
 </div>
 
 # Instalation
-Requirements: Python, Pyffem
+Requirements: Python, Pyfreefem
 ```bash
 python -m venv rompcm
+pip install pyfreefem
 pip install -e .
 ```
