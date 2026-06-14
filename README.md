@@ -1,5 +1,5 @@
 # ROMPCM
-Reduced-Order Modeling for Phase Change Materials including pure conductive and nonlinear convective regimes. Conventional POD-Galerkin is compared with non-intrusive POD-RBF surogate model in both configurations. Data are upload from the directory thanks to the papier: Parallel finite-element codes for the simulation of two-dimensional and three-dimensional solid–liquid phase-change systems with natural convection [https://doi.org/10.1016/j.cpc.2020.107492].
+Reduced-Order Modeling for Phase Change Materials including pure conductive and nonlinear convective regimes. Conventional POD-Galerkin is compared with non-intrusive POD-RBF surogate model in both configurations. Data are uploaded from the papier:  [https://doi.org/10.1016/j.cpc.2020.107492].
 - POD-Galerkin
 - POD-RBF interpolation
 <p align="center">
@@ -19,9 +19,9 @@ T &= \mu, \qquad  \text{on } \partial \Gamma_l \\
 $$
 
 <div align="center">
-  <img src="docs/Tcondt.parav.final.png" width="280"/>
-  <img src="docs/Trcondt.parav.final.png" width="280"/>
-  <img src="docs/Tdfcondt.parav.final.png" width="280"/><br>
+  <img src="docs/Tcondt.parav.final.png" width="300"/>
+  <img src="docs/Trcondt.parav.final.png" width="300"/>
+  <img src="docs/Tdfcondt.parav.final.png" width="300"/><br>
   <em>Comparaion between FOM and ROM temperature fields</em>
 </div>
 
@@ -43,8 +43,8 @@ $$
 $$
 
 <div align="center">
-  <img src="docs/Tconvt.parav.final.png" width="280"/>
-  <img src="docs/Trconvt.parav.final.png" width="280"/>
-  <img src="docs/Tdfconvt.parav.final.png" width="280"/><br>
+  <img src="docs/Tconvt.parav.final.png" width="300"/>
+  <img src="docs/Trconvt.parav.final.png" width="300"/>
+  <img src="docs/Tdfconvt.parav.final.png" width="300"/><br>
   <em>Comparaion between FOM and ROM temperature fields</em>
 </div>
