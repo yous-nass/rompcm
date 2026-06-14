@@ -8,8 +8,10 @@ Reduced-Order Modeling for Phase Change Materials (PCM) including pure conductiv
 
 # Examples
 
+```bash
 from rompcm.inference import PODRBFInference
-u = model.predict_time(...)
+u = model.predict_time("cond")
+```
 
 ## 1. Conductive PCM regime
 In the conductive regime the temperature equation is governing by:
@@ -56,6 +58,7 @@ $$
 
 # Instalation
 Requirements: Python, Pyffem
-
+```bash
 python -m venv rompcm
 pip install -e .
+```
