@@ -62,4 +62,5 @@ Requirements: Python, Pyfreefem
 python -m venv rompcm
 pip install pyfreefem
 pip install -e .
+pytest
 ```
