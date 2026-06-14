@@ -20,7 +20,7 @@ $$
 <div align="center">
   <img src="docs/Tcondt.parav.final.png" width="280"/>
   <img src="docs/Trcondt.parav.final.png" width="280"/>
-  <img src="docs/Tdifcondt.parav.final.png" width="280"/><br>
+  <img src="docs/Tdfcondt.parav.final.png" width="280"/><br>
   <em>Comparaion between FOM and ROM temperature fields</em>
 </div>
 
