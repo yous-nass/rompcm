@@ -11,7 +11,7 @@ In the conductive regime the temperature equation is governing by:
 
 $$
 \begin{aligned}
-\partial_t T - \frac{1}{\mathrm{Re}\,\mathrm{Pr}} \Delta T + \partial_t S(T) &= 0,
+\partial_t T - \frac{1}{\mathrm{Re} \mathrm{Pr}} \Delta T + \partial_t S(T) &= 0,
 \qquad \text{on }\Omega \times (0, t_{\max}) \\
 T(\mathbf{x}, 0) &= -0.01, \qquad \text{on } \Omega \\
 T &= 1.075, \qquad  \text{on } \partial \Gamma_l \\
@@ -35,7 +35,7 @@ $$
 
 $$
 \partial_t \mathbf{u} + (\mathbf{u} \cdot \nabla)\mathbf{u} + \nabla p - \frac{1}{\mathrm{Re}} \nabla^2 \mathbf{u} =
-\frac{\mathrm{Ra}\,T}{\mathrm{Pr}\,\mathrm{Re}^2}\,\mathbf{e}_y - \frac{C_{ck}(1-\zeta_l(T))^2}{\zeta_l(T)^3 + 10^{-6}}\,\mathbf{u}
+\frac{\mathrm{Ra}\,T}{\mathrm{Pr} \mathrm{Re}^2} \mathbf{e}_y - \frac{C_{ck}(1-\zeta_l(T))^2}{\zeta_l(T)^3 + 10^{-6}} \mathbf{u}
 $$
 
 $$
