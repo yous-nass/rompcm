@@ -1,0 +1,227 @@
+// ======================================================================
+//  pod_cond_lift.edp
+//
+//  Affine decomposition of the Dirichlet BC for the parametric
+//  conductive PCM problem.
+//               d_t T - 1/Re/Pr grad^2 T + d_t S(T) = 0
+//  BC:          T = mu  on wall 4  (label 4)
+//               homogeneous Neumann elsewhere
+//
+//  Lifting decomposition:
+//    T_r(x,t;mu) = Tmean(x) + mu * g1(x)  +  Ttilde_r(x,t;mu)
+//
+//  where
+//    g1  solves:  -Laplacian(g1) = 0   in Omega
+//                 g1 = 1  on wall 4
+//    (g1 is mu-independent, computed once)
+//
+//    Ttilde_r satisfies HOMOGENEOUS Dirichlet BCs for all mu.
+//    The POD basis {phi_i} is built from {Ttilde_r} 
+//    Ttilde_r(x,t;mu) = Sum_i a_i(t, mu) phi_i 
+//
+//  Projected BDF2 system:
+//
+//   [c1*(MrT + S'(T(a)) + KrT] * a^{n+1}
+//        = c2*MrT*a^n - c3*MrT*a^{n-1}
+//       + rS(a^n, a^{n-1})            <- nonlinear S history
+//       + c1*(dS(T(a))*S(T(a)) - S(T(a)), phi_i)  <- Newton k term
+//       + fmean                       <- lifting mean terms
+//
+//  Affine operators (all assembled ONCE offline):
+//    KrT[i,j]  = (1/Re/Pr) * (grad phi_i, grad phi_j)
+//    MrT[i,j]  = (phi_i, phi_j)
+//    fmean[i]  = -1/Re/Pr * (grad (g1 + Tmean), grad phi_i)
+//                -c1[(dS(T(a) + 1)*(g1 + Tmean), phi_i]
+//
+//  Nonlinear S lifting term:
+//    The phase-change function S(T) with T = Tmean + mu*g1 + Phi*a is nonlinear
+//    evaluated at the FULL reconstructed field
+//    T_r = Tmean + mu*g1 + Phi*a, at each Newton step (standard online assembly).
+//
+// =========================================================================
+
+//  OFFLINE — load FOM snapshots and build basis
+// -----------------------------------------------
+cout << "=== OFFLINE: loading " << Nsnapshots << " snapshots ===" << endl;
+Vh[int] snap(Nsnapshots), Phi(Nr);
+Vh g1, Tbar = 0;
+
+/*
+// compute g1, load snapshots and bulid reduced basis 
+Vh vtest;
+problem liftProblem(g1, vtest) =
+    int2d(Mh)( IPr * (grad(g1)' * grad(vtest)) )
+    + on(4, g1 = 1.);
+
+liftProblem;
+g1[] *= beta;
+*/
+
+// load g1
+for (int j = 0; j < Ndof; j++) { fg >> g1[][j];}  
+
+g1[] *= beta;
+
+real t0 = tmin;
+for (int i = 0; i < Nt; i++) {
+    ifstream f(snapPath + "Th_" + beta + "/T.t." + t0 + ".txt");
+    snap[i] = 0.;
+    for (int j = 0; j < Ndof; j++) f >> snap[i][][j];
+    snap[i][] -= g1[];
+    t0 += dt;
+}
+
+
+if(savebasis)
+{
+    centersnap(snap, Tbar)
+    podofflinebasis(Phi, snap, Tbar, Nr, epsenergy, pathbasis, savebasis)
+}
+else
+{
+    ifstream fm(pathbasis+"snapmean.txt");
+    for (int j = 0; j < Ndof; j++) {fm >> Tbar[][j];}  
+    for (int i = 0; i < Nsnapshots; i++) snap[i][] -= Tbar[];
+    
+    for (int i = 0; i < Nr; i++) {
+    ifstream fphi(pathbasis+"phi_"+i+".txt");
+    Phi[i] = 0.; 
+    for (int j = 0; j < Ndof; j++) { fphi >> Phi[i][][j]; }
+    }
+}
+cout << "POD basis built with Nr = " << Nr << " ." << endl;
+Tbar[] += g1[];
+
+// Reduced stiffness matrix  Kr
+real[int, int] Kr(Nr, Nr);
+reducedstiffmatix(Kr, Phi, Nr)
+
+real[int] fmean(Nr);
+for (int i = 0; i < Nr; i++) {
+    fmean[i] = -int2d(Mh, qforder=6)(IPr*grad(Tbar)' * grad(Phi[i])
+                                    + c1*Tbar*Phi[i] );
+}
+// -----------------------------------------------
+cout << "==================== Assembling ROM operators ==============" << endl;
+
+// -----------------------------------------------
+//  Initial conditions
+// -----------------------------------------------
+
+real[int] a(Nr), ap(Nr), app(Nr);
+Vh Trplot, Tsnap;
+
+real errl2, resl2, errinterp ;
+
+for (int i = 0; i < Nr; i++)
+{
+  ap[i] = int2d(Mh,qforder=6)( snap[0] * Phi[i] );
+  a[i]  = int2d(Mh,qforder=6)( snap[1] * Phi[i] );
+}
+
+Tsnap[] = snap[0][] + Tbar[] ;
+reconstruct(Trplot, Tbar, Phi, ap, Nr)
+relativeL2error(errl2, Trplot, Tsnap)
+
+cout << "Initial condition  n-2  ||Tr - Th||_L2 = "
+     << sqrt(errl2) << endl;
+
+Tsnap[] = snap[1][] + Tbar[];
+reconstruct(Trplot, Tbar, Phi, a, Nr)
+relativeL2error(errl2, Trplot, Tsnap)
+cout << "Initial condition  n-1  ||Tr - Th||_L2 = "
+     << sqrt(errl2 / 2) << endl;
+     
+
+// --- ------------------------Time loop-------------------------------
+int  newtonMax = 20;
+real tolNewton = 1.e-6;
+real err;
+
+Vh Tph, Tpph, Trh;  
+
+real[int,int] Nsr(Nr, Nr);
+real[int]     rhsS(Nr);
+real[int]     br(Nr);
+real[int,int] Ar(Nr, Nr);
+real[int]     anew(Nr);
+int sidx;
+cout << "=== ONLINE: ROM time integration  mu=" << beta << " ===" << endl;
+
+while (t < tmax) {
+    app = ap; ap  = a;
+    t   += dt;
+    
+    sidx = int(round((t - tmin) / dt));
+    
+    reconstruct(Tph,  Tbar, Phi, ap, Nr)
+    reconstruct(Tpph, Tbar, Phi, app, Nr)
+    
+    for (int i = 0; i < Nr; i++) {
+          rhsS[i] = int2d(Mh, qforder=6)( (c2 * (Tph + S(Tph)) - c3 * (Tpph + S(Tpph))) * Phi[i] );
+          rhsS[i] += fmean[i];
+    }
+    err = 1.;
+    
+    for (int niter = 0; niter < newtonMax; niter++) {
+        reconstruct(Trh, Tbar, Phi, a, Nr)
+        br = rhsS;
+
+        // ── Nonlinear S term ───────────────────────────────────────────
+        for (int i = 0; i < Nr; i++) {
+            // diagonal
+            Nsr(i,i) = int2d(Mh, qforder=6)( c1 * (1. + dS(Trh)) * Phi[i] * Phi[i] );
+
+            for (int j = i+1; j < Nr; j++) {
+                real nsij = int2d(Mh, qforder=6)(c1 * (1. + dS(Trh)) * Phi[j] * Phi[i]);
+                Nsr(i,j) = nsij;
+                Nsr(j,i) = nsij;
+            }
+            br[i] += int2d(Mh, qforder=6)( c1 * (dS(Trh)*Trh - S(Trh) 
+                                                 - dS(Trh)*(Tbar)) * Phi[i]);
+        }
+
+        // ── Assemble  Arom * a^{n+1} = brom ───────────────────────────
+        for (int i = 0; i < Nr; i++) {
+            for (int j = 0; j < Nr; j++) Ar(i,j) = Nsr(i,j) + IPr*Kr(i,j);
+        }
+
+        // ── Solve Nr x Nr system ───────────────────────────────────────
+        {
+            matrix Amat(Nr, Nr);
+            for (int i = 0; i < Nr; i++)
+                for (int j = 0; j < Nr; j++)
+                    Amat(i,j) = Ar(i,j);
+            set(Amat, solver=UMFPACK);
+            anew = Amat^-1 * br;
+        }
+
+        // Newton convergence
+        err = 0.;
+        for (int i = 0; i < Nr; i++) err = max(err, abs(anew[i] - a[i]));
+        a = anew;
+
+        // cout << "  Newton=" << niter << "  err=" << err << " / " << tolNewton << endl;
+        if (err < tolNewton) break;
+        assert(err < 1.e10);
+    }
+
+    // Reconstruct for output
+    reconstruct(Trplot, Tbar, Phi, a, Nr)
+    
+    plot(Trplot, dim=2, value=1, fill=1, cmm="ROM T  mu="+beta+"  t="+t);
+    
+    // ── L2 error against stored FOM snapshot (optional) ───────────────
+    Tsnap[] = snap[sidx][];
+    interpolationerror(errinterp, Tsnap, Phi, a, Nr)
+    Tsnap[] += Tbar[];
+    pcmcondresidualerrors(errl2, resl2, Tpph, Tph, Trplot, Tsnap)
+    
+    cout << "Time step " <<  sidx  <<  "   ||Tr - Th||_L2 = " << sqrt(errl2 / (sidx-1)) << 
+                                       "   ||Tr - Th||_L2 = " << sqrt(resl2 / (sidx-1)) <<  
+                                       "   ||ar - ah||_L2 = " << sqrt(errinterp / (sidx-1)) <<  endl; 
+}
+
+errl2 = sqrt(errl2 / (sidx-1));
+resl2 = sqrt(resl2 / (sidx-1));
+errinterp = sqrt(errinterp / (sidx-1));
