@@ -1,20 +1,20 @@
 # ROMPCM
-Reduced-Order Modeling for Phase Change Materials including pure conductive and nonlinear convective regimes. Conventional POD-Galerkin is compared with non-intrusive POD-RBF surogate model in both configurations. Data are uploaded from the papier:  [https://doi.org/10.1016/j.cpc.2020.107492].
+Reduced-Order Modeling for Phase Change Materials (PCM) including pure conductive and nonlinear convective regimes. Conventional POD-Galerkin is compared with non-intrusive POD-RBF surogate model in both configurations. Data are uploaded from the papier:  [https://doi.org/10.1016/j.cpc.2020.107492].
 - POD-Galerkin
 - POD-RBF interpolation
 <p align="center">
   <img src="docs/podrbfoffline1.png" width="900">
 </p>
 
-## 1. Conductive phase change regime
+## 1. Conductive PCM regime
 In the conductive regime the temperature equation is governing by:
 
 $$
 \begin{aligned}
 \partial_t T - \frac{1}{\mathrm{Re}\,\mathrm{Pr}} \Delta T + \partial_t S(T) &= 0,
 \qquad \text{on }\Omega \times (0, t_{\max}) \\
-T(\mathbf{x}, 0) &= T_0, \qquad \text{on } \Omega \\
-T &= \mu, \qquad  \text{on } \partial \Gamma_l \\
+T(\mathbf{x}, 0) &= -0.01, \qquad \text{on } \Omega \\
+T &= 1.075, \qquad  \text{on } \partial \Gamma_l \\
 \end{aligned}
 $$
 
@@ -25,7 +25,7 @@ $$
   <em>Comparaion between FOM and ROM temperature fields</em>
 </div>
 
-## 2. Convective phase change regime
+## 2. Convective PCM regime
 In this second example, the PDE model describes the melting process of PCM governed by the Navier–Stokes–Boussinesq equations coupled with energy conservation:
 
 $$
