@@ -8,6 +8,7 @@ Reduced-Order Modeling for Phase Change Materials including pure conductive and 
 
 ## 1. Conductive phase change regime
 In the conductive regime the temperature equation is governing by:
+
 $$
 \begin{aligned}
 \partial_t T - \frac{1}{\mathrm{Re}\,\mathrm{Pr}} \Delta T + \partial_t S(T) &= 0,
@@ -26,6 +27,7 @@ $$
 
 ## 2. Convective phase change regime
 In this second example, the PDE model describes the melting process of PCM governed by the Navier–Stokes–Boussinesq equations coupled with energy conservation:
+
 $$
 \nabla \cdot \mathbf{u} = 0
 $$
