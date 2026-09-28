@@ -8,17 +8,27 @@ Reduced-Order Modeling for Phase Change Materials (PCM) including pure conductiv
 - POD-RBF interpolation | direct SVD plus RBF interpolation to ensure no-intrusive surogate ROM
 - GPOD-RBF | specific only to conductive PCM which self-similiar coordinate transformation is first performed to align all snapshots at fixed solid-liquid interface
 ```
-## POD-RBF Interpolation
-<p align="center">
-  <img src="docs/podrbfoffline1.png" width="900">
-</p>
 
 ## Self-Similar transformation
 <p align="center">
   <img src="docs/sstransfdiagram.png" width="900">
 </p>
 
-# Examples
+<p align="center">
+  <img src="docs/backwardtemp.png" width="900">
+</p>
+
+<p align="center">
+  <img src="docs/backwardtemp2d.png" width="900">
+</p>
+
+
+## POD-RBF Interpolation
+<p align="center">
+  <img src="docs/podrbfoffline1.png" width="900">
+</p>
+
+## Examples
 
 ```bash
 from rompcm.inference import PODRBFInference
