@@ -15,11 +15,13 @@ Reduced-Order Modeling for Phase Change Materials (PCM) including pure conductiv
 </p>
 
 <p align="center">
-  <img src="docs/backwardtemp.png" width="900">
+  <em>1D reference and self-similar temperatures</em>
+  <img src="docs/backwardtemp.png" width="500">
 </p>
 
 <p align="center">
-  <img src="docs/backwardtemp2d.png" width="900">
+  <em>2D self-similar temperatures</em>
+  <img src="docs/backwardtemp2d.png" width="500">
 </p>
 
 
