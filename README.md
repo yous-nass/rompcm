@@ -6,7 +6,7 @@ Reduced-Order Modeling for Phase Change Materials (PCM) including pure conductiv
 ```
 - POD-Galerkin | conventionnal intrusive Galerkin projection method based on snapshot method
 - POD-RBF interpolation | direct SVD plus RBF interpolation to ensure no-intrusive surogate ROM
-- GPOD-RBF | specific only to conductive PCM which self-similiar coordinate transformation is first performed to align all snapshots at fixed solid-liquid interface
+- GPOD-RBF | specific only for conductive PCM which self-similiar coordinate transformation is first performed to align all snapshots at fixed solid-liquid interface
 ```
 
 ## Self-Similar transformation
@@ -19,7 +19,7 @@ Reduced-Order Modeling for Phase Change Materials (PCM) including pure conductiv
   <img src="docs/backwardtemp.png" width="700">
 </p>
 
-### 2D self-similar temperatures
+### 2D reference and self-similar temperatures
 <p align="center">
   <img src="docs/temp2d.png" width="700">
   <img src="docs/backwardtemp2d.png" width="700">
@@ -30,6 +30,12 @@ Reduced-Order Modeling for Phase Change Materials (PCM) including pure conductiv
 <p align="center">
   <img src="docs/podrbfoffline1.png" width="900">
 </p>
+
+## SVD for reference T and self-similar X snapshots
+<p align="center">
+  <img src="docs/singularvalue2d.png" width="900">
+</p>
+
 
 ## Examples
 
