@@ -25,15 +25,14 @@ Reduced-Order Modeling for Phase Change Materials (PCM) including pure conductiv
   <img src="docs/backwardtemp2d.png" width="700">
 </p>
 
+## SVD for reference T and self-similar X snapshots
+<p align="center">
+  <img src="docs/singularvalue2d.png" width="900">
+</p>
 
 ## POD-RBF Interpolation
 <p align="center">
   <img src="docs/podrbfoffline1.png" width="900">
-</p>
-
-## SVD for reference T and self-similar X snapshots
-<p align="center">
-  <img src="docs/singularvalue2d.png" width="900">
 </p>
 
 
