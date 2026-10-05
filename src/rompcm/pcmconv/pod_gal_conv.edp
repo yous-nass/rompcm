@@ -1,0 +1,427 @@
+// ================================================================
+//  rom_conv_pcm.edp
+//
+//  Simplifications full version:
+//    1. Pressure taken directly from FOM snapshot SnapP[sidx]
+//       => no pressure unknowns, no divergence rows
+//
+//  Full momentum equation including (u·grad)u convection.
+//  Newton linearisation of (u·grad)u around (Uxrh, Uyrh):
+//
+//    (u·grad)u ~ (u^k·grad)u^{n+1} + (u^{n+1}·grad)u^k - (u^k·grad)u^k
+//
+//  New terms in system matrix vs simplified version:
+//    A_UxUx += (Uxrh*dx(PhiUx[j]) + Uyrh*dy(PhiUx[j]), PhiUx[i])
+//    A_UxUy += (PhiUy[j]*dy(Uxrh), PhiUx[i])   <- cross block
+//    A_UyUy += (Uxrh*dx(PhiUy[j]) + Uyrh*dy(PhiUy[j]), PhiUy[i])
+//    A_UyUx += (PhiUx[j]*dx(Uyrh), PhiUy[i])   <- cross block
+//
+//  New terms in RHS:
+//    br_Ux[i] += ([Uxrh,Uyrh]·grad(Uxrh - Uxbar), PhiUx[i])
+//             -  ([Uxbar,Uybar]·grad Uxrh, PhiUx[i])
+//    br_Uy[i] += ([Uxrh,Uyrh]·grad(Uyrh - Uybar), PhiUy[i])
+//             -  ([Uxbar,Uybar]·grad Uyrh, PhiUy[i])
+//
+//  Full block structure  (Ntot = NrT + NrU + NrV):
+//
+//  [ A_TT    A_TUx   A_TUy  ] [aT ]   [brT ]
+//  [ A_UxT   A_UxUx  A_UxUy ] [aUx] = [brUx]
+//  [ A_UyT   A_UyUx  A_UyUy ] [aUy]   [brUy]
+// ================================================================
+
+
+// -----------------------------------------------
+//  Load FOM snapshots
+// -----------------------------------------------
+cout << "========= Loading snapshots ========" << endl;
+
+// Snapshot matrices: Snap_X[dof][snap]
+Vh[int] SnapT(Nsnapshots), SnapUx(Nsnapshots), SnapUy(Nsnapshots);;
+Wh[int] SnapP(Nsnapshots);
+Vh g1, Tbar = 0, Uxbar = 0, Uybar = 0;
+
+for (int j = 0; j < Ndof; j++) {fg >> g1[][j];} 
+g1[] *= beta;
+
+real t0 = tmin;
+for (int i = 0; i < Nt; i++) {
+    ifstream fuvt(snapDir + "Th_" + beta + "/UVT.t."+t0+".txt");
+    ifstream fp(snapDir+"Th_"+beta+"/P.t."+t0+".txt");
+    
+    SnapT[i] = 0.; SnapUx[i] = 0.; SnapUy[i] = 0.; SnapP[i] = 0.;
+    for (int j = 0; j < Ndof; j++) fuvt >> SnapUx[i][][j]>>SnapUy[i][][j]>>SnapT[i][][j];
+    for (int j = 0; j < NdofP; j++) fp >> SnapP[i][][j];
+    
+    SnapT[i][] -= g1[]; 
+    t0 += dt;
+}
+cout << "=======================Snapshots loaded.=================" << endl;
+
+
+
+Vh[int] PhiT(NrT), PhiUx(NrU), PhiUy(NrV);
+
+if(savebasis)
+{
+    centersnap(SnapT, Tbar)
+    centersnap(SnapUx, Uxbar)
+    centersnap(SnapUy, Uybar)
+    podofflinebasis(PhiT, SnapT, Tbar, NrT, epsenergy, tbasis, savebasis)
+    podofflinebasis(PhiUx, SnapUx, Uxbar, NrU, epsenergy, ubasis, savebasis)
+    podofflinebasis(PhiUy, SnapUy, Uybar, NrV, epsenergy, vbasis, savebasis)
+}
+else
+{
+    // load mean snapshots
+    ifstream um(ubasis+"snapmean.txt");
+    ifstream vm(vbasis+"snapmean.txt");
+    ifstream tm(tbasis+"snapmean.txt");
+    
+    for (int j = 0; j < Ndof; j++) {um >> Uxbar[][j]; vm >> Uybar[][j]; tm >> Tbar[][j];}
+    
+    for (int i = 0; i < Nsnapshots; i++){
+        SnapUx[i][] -= Uxbar[]; SnapUy[i][] -= Uybar[]; SnapT[i][] -= Tbar[];}
+    
+    // load basis
+    for (int i = 0; i < NrT; i++) {
+        ifstream tphi(tbasis+"phi_"+i+".txt");
+        PhiT[i] = 0.; 
+        for (int j = 0; j < Vh.ndof; j++) tphi >> PhiT[i][][j]; 
+    }
+
+    for (int i = 0; i < NrU; i++) {
+        ifstream uphi(ubasis+"phi_"+i+".txt");
+        PhiUx[i] = 0.;
+        for (int j = 0; j < Vh.ndof; j++) uphi >> PhiUx[i][][j]; 
+    }
+
+    for (int i = 0; i < NrV; i++) {
+        ifstream vphi(vbasis+"phi_"+i+".txt");
+        PhiUy[i] = 0.;
+        for (int j = 0; j < Vh.ndof; j++) vphi >> PhiUy[i][][j]; 
+    }
+}
+cout << "POD basis built with NrT = " << NrT <<
+                         ",   NrU = " << NrU <<
+                         ",   NrV = " << NrV << endl;
+
+// -----------------------------------------------
+//  Initial conditions
+// -----------------------------------------------
+real[int] aT(NrT), aTp(NrT), aTpp(NrT);
+real[int] aUx(NrU), aUxp(NrU), aUxpp(NrU);
+real[int] aUy(NrV), aUyp(NrV), aUypp(NrV);
+
+podofflinecoef(aTp, SnapT[0], PhiT, NrT)
+podofflinecoef(aT, SnapT[1], PhiT, NrT)
+
+podofflinecoef(aUxp, SnapUx[0], PhiUx, NrU)
+podofflinecoef(aUx, SnapUx[1], PhiUx, NrU)
+
+podofflinecoef(aUyp, SnapUy[0], PhiUy, NrV)
+podofflinecoef(aUy, SnapUy[1], PhiUy, NrV)
+
+Vh Trplot, uxplot, uyplot, Tsnap, Usnap, Vsnap;
+Tbar[] += g1[];
+real errl2, resl2 ;
+
+Usnap[] = SnapUx[0][] + Uxbar[] ;
+reconstruct(uxplot, Uxbar, PhiUx, aUxp, NrU)
+relativeL2error(errl2, uxplot, Usnap)
+
+cout << "Initial condition  n-2  ||Ur - Uh||_L2 = "
+     << sqrt(errl2) << endl;
+     
+errl2 = 0.;
+Vsnap[] = SnapUy[0][] + Uybar[] ;
+reconstruct(uyplot, Uybar, PhiUy, aUyp, NrV)
+relativeL2error(errl2, uyplot, Vsnap)
+cout << "Initial condition  n-2  ||Vr - Vh||_L2 = "
+     << sqrt(errl2) << endl;
+     
+errl2=0.;     
+Tsnap[] = SnapT[0][] + Tbar[] ;
+reconstruct(Trplot, Tbar, PhiT, aTp, NrT)
+relativeL2error(errl2, Trplot, Tsnap)
+cout << "Initial condition  n-2  ||Tr - Th||_L2 = "
+     << sqrt(errl2) << endl;
+plot(Trplot,  dim=2, value=1, fill=1, cmm="initial T   t="+t);
+plot([uxplot, uyplot], dim=2, value=1, cmm="ROM U  t="+t);
+
+// assert(false);
+real[int, int] KrT(NrT, NrT), KrUx(NrU, NrU), KrUy(NrV, NrV);
+reducedstiffmatix(KrT, PhiT, NrT)
+reducedstiffmatix(KrUx, PhiUx, NrU)
+reducedstiffmatix(KrUy, PhiUy, NrV)
+
+// -----------------------------------------------
+//  ONLINE — ROM time loop  (BDF2 + Newton)
+// -----------------------------------------------
+cout << "=== Online ROM time loop ===" << endl;
+                       
+// ------------------------------------------------------
+// Offsets into the global ROM vector [a_T | a_Ux | a_Uy]
+// ------------------------------------------------------
+int offUx = NrT;
+int offUy = NrT + NrU;
+int Ntot  = NrT + NrU + NrV;
+int sidx;
+
+Vh Tph, Tpph, Trh, Uxph, Uxpph, Uxrh, Uyph, Uypph, Uyrh; 
+
+// Working arrays
+real[int,int] Nsr(Ntot, Ntot);
+real[int]     br(Ntot);
+real[int]     rhsS(Ntot);
+real[int,int] Ar(Ntot, Ntot);
+real[int]     xnew(Ntot);
+
+
+int  newtonMax = 20;
+real tolNewton = 1.e-6;
+real err, errinterp;
+
+real[int] fmean(Ntot);
+// temperature contribution
+for (int i = 0; i < NrT; i++) {
+    fmean[i] = -int2d(Mh, qforder=6)(IPr*grad(Tbar)'*grad(PhiT[i])
+                                     + c1*Tbar*PhiT[i] );
+}
+
+// velocity ux contribution
+for (int i = 0; i < NrU; i++) {
+    fmean[i+NrT] = -int2d(Mh, qforder=6)(IRe*grad(Uxbar)'*grad(PhiUx[i])
+                                          + c1*Uxbar*PhiUx[i] );
+}
+
+// velocity uy contribution
+for (int i = 0; i < NrV; i++) {
+    fmean[i+offUy] = -int2d(Mh, qforder=6)(IRe*grad(Uybar)'*grad(PhiUy[i])
+                                             + c1*Uybar*PhiUy[i] ); 
+}
+
+// -----------------------------------------------
+// Time loop
+// -----------------------------------------------
+while (t < tmax) {
+
+    // ── BDF2 level shift ─────────────────────────────────────────
+    aTpp  = aTp;   aUxpp = aUxp;  aUypp = aUyp;
+    aTp   = aT;    aUxp  = aUx;   aUyp  = aUy;
+    t    += dt;
+
+    int sidx = int(round((t - tmin) / dt));
+    cout << "--- t = " << t << "  sidx = " << sidx << " ---" << endl;
+
+    // ── Reconstruct previous levels ──────────────────────────────
+    reconstruct(Tph,   Tbar,  PhiT,  aTp,   NrT)
+    reconstruct(Tpph,  Tbar,  PhiT,  aTpp,  NrT)
+    reconstruct(Uxph,  Uxbar, PhiUx, aUxp,  NrU)
+    reconstruct(Uxpph, Uxbar, PhiUx, aUxpp, NrU)
+    reconstruct(Uyph,  Uybar, PhiUy, aUyp,  NrV)
+    reconstruct(Uypph, Uybar, PhiUy, aUypp, NrV)
+
+    // ── Time-level RHS  (assembled once per time step) ───────────
+    rhsS = 0.;
+
+    // Temperature
+    for (int i = 0; i < NrT; i++) {
+        rhsS[i]  = int2d(Mh, qforder=6)(
+                       (c2*(Tph + S(Tph)) - c3*(Tpph + S(Tpph))) * PhiT[i] );
+        rhsS[i] += fmean[i];
+    }
+
+    // Ux momentum: BDF2 history + given pressure gradient
+    for (int i = 0; i < NrU; i++) {
+        rhsS[offUx+i]  = int2d(Mh, qforder=6)( (c2*Uxph - c3*Uxpph) * PhiUx[i] );
+        rhsS[offUx+i] += fmean[offUx+i];
+        // pressure forcing from FOM snapshot (given, not an unknown)
+        rhsS[offUx+i] += int2d(Mh, qforder=6)( dx(PhiUx[i]) * SnapP[sidx] );
+    }
+
+    // Uy momentum: BDF2 history + given pressure gradient
+    for (int i = 0; i < NrV; i++) {
+        rhsS[offUy+i]  = int2d(Mh, qforder=6)((c2*Uyph - c3*Uypph) * PhiUy[i] );
+        rhsS[offUy+i] += fmean[offUy+i];
+        // pressure forcing from FOM snapshot
+        rhsS[offUy+i] += int2d(Mh, qforder=6)( dy(PhiUy[i]) * SnapP[sidx] );
+    }
+
+    // ── Newton loop ──────────────────────────────────────────────
+    err = 1.;
+    for (int niter = 0; niter < newtonMax; niter++) {
+
+        reconstruct(Trh,  Tbar,  PhiT,  aT,  NrT)
+        reconstruct(Uxrh, Uxbar, PhiUx, aUx, NrU)
+        reconstruct(Uyrh, Uybar, PhiUy, aUy, NrV)
+
+        br  = rhsS;
+        Nsr = 0.;
+        for (int i = 0; i < NrT; i++) {
+
+            // T-T: phase change + convection (linearised around Uxrh, Uyrh)
+            Nsr(i, i) = int2d(Mh, qforder=6)((c1*(1. + dS(Trh)) * PhiT[i]
+                                            + [Uxrh, Uyrh]'*grad(PhiT[i])) * PhiT[i] );
+
+            for (int j = i+1; j < NrT; j++) {
+                real nsij = int2d(Mh, qforder=6)( c1*(1. + dS(Trh)) * PhiT[j]* PhiT[i] );
+                Nsr(i,j) = nsij + int2d(Mh, qforder=6)([Uxrh,Uyrh]'*grad(PhiT[j])*PhiT[i] );
+                Nsr(j,i) = nsij + int2d(Mh, qforder=6)([Uxrh,Uyrh]'*grad(PhiT[i])*PhiT[j] );
+            }
+
+            // T-Ux: variation of u·grad T w.r.t. aUx
+            for (int j = 0; j < NrU; j++)
+                Nsr(i, offUx+j) = int2d(Mh, qforder=6)(PhiUx[j]*dx(Trh)*PhiT[i] );
+
+            // T-Uy: variation of u·grad T w.r.t. aUy
+            for (int j = 0; j < NrV; j++)
+                Nsr(i, offUy+j) = int2d(Mh, qforder=6)(PhiUy[j]*dy(Trh)*PhiT[i] );
+
+            // T RHS: S linearisation remainder + convection corrections
+            br[i] += int2d(Mh, qforder=6)((c1*(dS(Trh)*Trh - S(Trh) - dS(Trh)*Tbar)
+                                        + [Uxrh, Uyrh]'*grad(Trh) 
+                                        - [Uxrh, Uyrh]'*grad(Tbar) 
+                                        - [Uxbar, Uybar]'*grad(Trh))* PhiT[i] );
+        }
+
+        // ── Ux block  A_UxUx + A_UxT ─────────────────────────────
+        for (int i = 0; i < NrU; i++) {
+            Nsr(offUx+i, offUx+i) = int2d(Mh, qforder=6)(
+                ((c1 - Amushy(Trh) + dx(Uxrh) )*PhiUx[i]
+                + [Uxrh, Uyrh]'*grad(PhiUx[i]) )*PhiUx[i]);
+
+            for (int j = i+1; j < NrU; j++) {
+                real nsij = int2d(Mh, qforder=6)(
+                    (c1 - Amushy(Trh) + dx(Uxrh) )*PhiUx[j]*PhiUx[i]);
+
+                Nsr(offUx+i, offUx+j) = nsij + int2d(Mh, qforder=6)( 
+                                                [Uxrh, Uyrh]'*grad(PhiUx[j])*PhiUx[i]);
+                Nsr(offUx+j, offUx+i) = nsij + int2d(Mh, qforder=6)( 
+                                                [Uxrh, Uyrh]'*grad(PhiUx[i])*PhiUx[j]);
+            }
+
+            // A_UxUy cross block: variation of Uy*dy(Uxrh) w.r.t. aUy
+            for (int j = 0; j < NrV; j++)
+                Nsr(offUx+i, offUy+j) = int2d(Mh, qforder=6)( PhiUy[j]*dy(Uxrh)* PhiUx[i] );
+
+            // A_UxT Darcy coupling
+            for (int j = 0; j < NrT; j++)
+                Nsr(offUx+i,j) -= int2d(Mh, qforder=6)(dAmushy(Trh)*Uxrh * PhiT[j]*PhiUx[i] );
+
+            // br_Ux: Darcy mean-field + convection nonlinear remainder
+            br[offUx+i] += int2d(Mh, qforder=6)((Amushy(Trh)*Uxbar 
+                                               + dAmushy(Trh)*(Tbar - Trh)*Uxrh
+                                               + [Uxrh, Uyrh]'*grad(Uxrh)  
+                                               - [Uxrh, Uyrh]'*grad(Uxbar) 
+                                               - [Uxbar, Uybar]'*grad(Uxrh) ) * PhiUx[i] );
+        }
+
+        // ── Uy block  A_UyUy + A_UyT ─────────────────────────────
+        for (int i = 0; i < NrV; i++) {
+            Nsr(offUy+i, offUy+i) = int2d(Mh, qforder=6)(
+                                         ((c1 - Amushy(Trh) + dy(Uyrh)) * PhiUy[i]
+                                         + [Uxrh,Uyrh]'*grad(PhiUy[i])) * PhiUy[i] );
+
+            for (int j = i+1; j < NrV; j++) {
+                real nsij = int2d(Mh, qforder=6)(
+                    (c1 - Amushy(Trh) + dy(Uyrh)) * PhiUy[j]* PhiUy[i]);
+                Nsr(offUy+i, offUy+j) = nsij + int2d(Mh, qforder=6)(
+                                         [Uxrh,Uyrh]'*grad(PhiUy[j])*PhiUy[i] );
+                Nsr(offUy+j, offUy+i) = nsij + int2d(Mh, qforder=6)(
+                                         [Uxrh,Uyrh]'*grad(PhiUy[i])*PhiUy[j] );
+            }
+
+            // A_UyUx cross block: two contributions
+            for (int j = 0; j < NrU; j++)
+                Nsr(offUy+i, offUx+j) = int2d(Mh, qforder=6)(PhiUx[j]*dx(Uyrh)*PhiUy[i] );
+
+
+            // Uy-T: buoyancy + Darcy coupling
+            for (int j = 0; j < NrT; j++) {
+                Nsr(offUy+i, j) -= int2d(Mh, qforder=6)(
+                                        (dfB(Trh) + dAmushy(Trh)*Uyrh) * PhiT[j]*PhiUy[i]);
+            }
+
+            // br_Uy: buoyancy + Darcy + convection nonlinear remainder
+            br[offUy+i] += int2d(Mh, qforder=6)((fB(Trh) - dfB(Trh)*Trh + dfB(Trh)*Tbar
+                                        + Amushy(Trh)*Uybar + dAmushy(Trh)*(Tbar - Trh)*Uyrh 
+                                        + [Uxrh, Uyrh]'*grad(Uyrh) - [Uxrh, Uyrh]'*grad(Uybar)
+                                        - [Uxbar, Uybar]'*grad(Uyrh) )* PhiUy[i] );
+        }
+        
+        // ── Build Ar = Nsr + precomputed stiffness ────────────────
+        Ar = 0.;
+
+        // T block + T-Ux + T-Uy coupling
+        for (int i = 0; i < NrT; i++) {
+            for (int j = 0; j < NrT; j++)
+                Ar(i, j) = Nsr(i, j) + IPr*KrT(i,j);
+            // T-Ux coupling (temperature convection by x-velocity)
+            for (int j = 0; j < NrU; j++)
+                Ar(i, offUx+j) = Nsr(i, offUx+j);
+            // T-Uy coupling (temperature convection by y-velocity)
+            for (int j = 0; j < NrV; j++)
+                Ar(i, offUy+j) = Nsr(i, offUy+j);
+        }
+
+        // Ux block + Ux-T coupling
+        for (int i = 0; i < NrU; i++) {
+            for (int j = 0; j < NrU; j++)
+                Ar(offUx+i, offUx+j) = Nsr(offUx+i, offUx+j) + IRe*KrUx(i,j);
+            for (int j = 0; j < NrT; j++)
+                Ar(offUx+i,j)  = Nsr(offUx+i,j);
+        }
+
+        // Uy block + Uy-T coupling
+        for (int i = 0; i < NrV; i++) {
+            for (int j = 0; j < NrV; j++)
+                Ar(offUy+i, offUy+j) = Nsr(offUy+i, offUy+j) + IRe*KrUy(i,j);
+            for (int j = 0; j < NrT; j++)
+                Ar(offUy+i, j)  = Nsr(offUy+i,j);
+        }
+
+        // ── Solve Ntot x Ntot system ──────────────────────────────
+        matrix Amat(Ntot, Ntot);
+        for (int i = 0; i < Ntot; i++)
+            for (int j = 0; j < Ntot; j++) Amat(i,j) = Ar(i,j);
+        set(Amat, solver=UMFPACK);
+        xnew = Amat^-1 * br;
+
+        // ── Newton convergence ────────────────────────────────────
+        err = 0.;
+        for (int i = 0; i < NrT; i++)
+            err = max(err, abs(xnew[i]  - aT[i]));
+        for (int i = 0; i < NrU; i++)
+            err = max(err, abs(xnew[offUx+i] - aUx[i]));
+        for (int i = 0; i < NrV; i++)
+            err = max(err, abs(xnew[offUy+i] - aUy[i]));
+
+        for (int i = 0; i < NrT; i++)  aT[i]  = xnew[i];
+        for (int i = 0; i < NrU; i++)  aUx[i] = xnew[offUx+i];
+        for (int i = 0; i < NrV; i++)  aUy[i] = xnew[offUy+i];
+
+        cout << "  t=" << t << "  Newton=" << niter
+             << "  err=" << err << endl;
+        if (err < tolNewton) break;
+        assert(err < 1.e10);
+    }
+
+    // ── Reconstruct and plot ──────────────────────────────────────
+    reconstruct(Trplot, Tbar, PhiT, aT, NrT)
+    reconstruct(uxplot, Uxbar, PhiUx, aUx, NrU)
+    reconstruct(uyplot, Uybar, PhiUy, aUy, NrV)
+        
+    plot(Trplot,  dim=2, value=1, fill=1, cmm="ROM T   t="+t);
+
+    Tsnap[] = SnapT[sidx][];
+    interpolationerror(errinterp, Tsnap, PhiT, aT, NrT)
+    Tsnap[] += Tbar[]; 
+    pcmconvresidualerrors(errl2, resl2, Tpph, Tph, Trplot, Tsnap, uxplot, uyplot)
+    cout << "Time step " <<  sidx  <<  "   ||Tr - Th||_L2 = " << sqrt(errl2 / (sidx-1)) << 
+                                       "   ||Tr - Th||_L2 = " << sqrt(resl2 / (sidx-1)) <<  
+                                       "   ||ar - ah||_L2 = " << sqrt(errinterp / (sidx-1)) << endl;
+}
+cout << "=== ROM solve complete ===" << endl;
+errl2 = sqrt(errl2 / (sidx-1));
+resl2 = sqrt(resl2 / (sidx-1));
+errinterp = sqrt(errinterp / (sidx-1));

@@ -1,0 +1,216 @@
+// ================================================================
+//  rom_conv_pcm.edp
+//
+//  Simplifications full version:
+//    1. Pressure and velocity taken directly from FOM snapshots
+//      SnapP[sidx], SnapU[sidx]
+//       => no pressure, velocity unknowns, no divergence rows
+//
+//  [ A_TT ] [aT ]   [brT ]
+//
+// ================================================================
+
+
+// -----------------------------------------------
+//  Load FOM snapshots
+// -----------------------------------------------
+cout << "========= Loading snapshots ========" << endl;
+
+// Snapshot matrices: Snap_X[dof][snap]
+Vh[int] SnapT(Nsnapshots), SnapUx(Nsnapshots), SnapUy(Nsnapshots);
+Vh g1, Tbar = 0, Uxbar = 0, Uybar = 0;
+
+for (int j = 0; j < Ndof; j++) {fg >> g1[][j];} 
+g1[] *= beta;
+
+real t0 = tmin;
+for (int i = 0; i < Nt; i++) {
+    ifstream fuvt(snapDir + "Th_" + beta + "/UVT.t."+t0+".txt");
+    
+    SnapT[i] = 0.; SnapUx[i] = 0.; SnapUy[i] = 0.;
+    for (int j = 0; j < Ndof; j++) fuvt >> SnapUx[i][][j]>>SnapUy[i][][j]>>SnapT[i][][j];
+    
+    SnapT[i][] -= g1[]; 
+    t0 += dt;
+}
+cout << "=======================Snapshots loaded.=================" << endl;
+
+
+
+Vh[int] PhiT(NrT);
+
+if(savebasis)
+{
+    centersnap(SnapT, Tbar)
+    podofflinebasis(PhiT, SnapT, Tbar, NrT, epsenergy, tbasis, savebasis)
+}
+else
+{
+    // load mean snapshots
+    ifstream tm(tbasis+"snapmean.txt");
+    
+    for (int j = 0; j < Ndof; j++) { tm >> Tbar[][j];}
+    
+    for (int i = 0; i < Nsnapshots; i++){ SnapT[i][] -= Tbar[];}
+    
+    // load basis
+    for (int i = 0; i < NrT; i++) {
+        ifstream tphi(tbasis+"phi_"+i+".txt");
+        PhiT[i] = 0.; 
+        for (int j = 0; j < Ndof; j++) tphi >> PhiT[i][][j]; 
+    }
+}
+cout << "POD basis built with NrT = " << NrT  << endl;
+
+// -----------------------------------------------
+//  Initial conditions
+// -----------------------------------------------
+real[int] aT(NrT), aTp(NrT), aTpp(NrT);
+
+podofflinecoef(aTp, SnapT[0], PhiT, NrT)
+podofflinecoef(aT, SnapT[1], PhiT, NrT)
+
+Vh Trplot, Tsnap;
+Tbar[] += g1[];
+real errl2, resl2 ;
+
+Tsnap[] = SnapT[0][] + Tbar[] ;
+reconstruct(Trplot, Tbar, PhiT, aTp, NrT)
+relativeL2error(errl2, Trplot, Tsnap)
+cout << "Initial condition  n-2  ||Tr - Th||_L2 = "
+     << sqrt(errl2) << endl;
+plot(Trplot,  dim=2, value=1, fill=1, cmm="initial T   t="+t);
+
+
+// assert(false);
+real[int, int] KrT(NrT, NrT);
+reducedstiffmatix(KrT, PhiT, NrT)
+
+// -----------------------------------------------
+//  ONLINE — ROM time loop  (BDF2 + Newton)
+// -----------------------------------------------
+cout << "=== Online ROM time loop ===" << endl;
+                       
+// ------------------------------------------------------
+// Offsets into the global ROM vector [a_T | a_Ux | a_Uy]
+// ------------------------------------------------------
+int offUx = NrT;
+int sidx;
+
+Vh Tph, Tpph, Trh; 
+
+// Working arrays
+real[int,int] Nsr(NrT, NrT);
+real[int]     br(NrT);
+real[int]     rhsS(NrT);
+real[int,int] Ar(NrT, NrT);
+real[int]     xnew(NrT);
+matrix Amat(NrT, NrT);
+
+int  newtonMax = 20;
+real tolNewton = 1.e-6;
+real err, errinterp;
+
+real[int] fmean(NrT);
+// temperature contribution
+for (int i = 0; i < NrT; i++) {
+    fmean[i] = -int2d(Mh, qforder=6)(IPr*grad(Tbar)'*grad(PhiT[i])
+                                     + c1*Tbar*PhiT[i] );
+}
+
+// -----------------------------------------------
+// Time loop
+// -----------------------------------------------
+while (t < tmax) {
+
+    // ── BDF2 level shift ─────────────────────────────────────────
+    aTpp = aTp;  aTp = aT;   
+    t    += dt;
+
+    int sidx = int(round((t - tmin) / dt));
+    cout << "--- t = " << t << "  sidx = " << sidx << " ---" << endl;
+
+    // ── Reconstruct previous levels ──────────────────────────────
+    reconstruct(Tph,   Tbar,  PhiT,  aTp,   NrT)
+    reconstruct(Tpph,  Tbar,  PhiT,  aTpp,  NrT)
+
+    // ── Time-level RHS  (assembled once per time step) ───────────
+    rhsS = 0.;
+
+    // Temperature
+    for (int i = 0; i < NrT; i++) {
+        rhsS[i]  = int2d(Mh, qforder=6)(
+                       (c2*(Tph + S(Tph)) - c3*(Tpph + S(Tpph))) * PhiT[i] );
+        rhsS[i] += fmean[i];
+    }
+    
+    // ── Newton loop ──────────────────────────────────────────────
+    err = 1.;
+    for (int niter = 0; niter < newtonMax; niter++) {
+
+        reconstruct(Trh,  Tbar,  PhiT,  aT,  NrT)
+
+        br  = rhsS;
+        Nsr = 0.;
+        for (int i = 0; i < NrT; i++) {
+
+            // T-T: phase change + convection (linearised around Uxrh, Uyrh)
+            Nsr(i, i) = int2d(Mh, qforder=6)((c1*(1. + dS(Trh)) * PhiT[i]
+                      + [SnapUx[sidx], SnapUy[sidx]]'*grad(PhiT[i])) * PhiT[i] );
+
+            for (int j = i+1; j < NrT; j++) {
+                real nsij = int2d(Mh, qforder=6)( c1*(1. + dS(Trh)) * PhiT[j]* PhiT[i] );
+                Nsr(i,j) = nsij + int2d(Mh, qforder=6)(
+                                [SnapUx[sidx], SnapUy[sidx]]'*grad(PhiT[j])*PhiT[i] );
+                Nsr(j,i) = nsij + int2d(Mh, qforder=6)(
+                               [SnapUx[sidx], SnapUy[sidx]]'*grad(PhiT[i])*PhiT[j] );
+            }
+
+
+            // T RHS: S linearisation remainder + convection corrections
+            br[i] += int2d(Mh, qforder=6)((c1*(dS(Trh)*Trh - S(Trh) - dS(Trh)*Tbar)
+                   - [SnapUx[sidx], SnapUy[sidx]]'*grad(Tbar) )* PhiT[i] );
+        }
+
+        // ── Build Ar = Nsr + precomputed stiffness ────────────────
+        Ar = 0.;
+        for (int i = 0; i < NrT; i++) {
+            for (int j = 0; j < NrT; j++)
+                Ar(i, j) = Nsr(i, j) + IPr*KrT(i,j);
+        }
+
+        // ── Solve Ntot x Ntot system ──────────────────────────────
+        for (int i = 0; i < NrT; i++)
+            for (int j = 0; j < NrT; j++) Amat(i,j) = Ar(i,j);
+        set(Amat, solver=UMFPACK);
+        xnew = Amat^-1 * br;
+
+        // ── Newton convergence ────────────────────────────────────
+        err = 0.;
+        for (int i = 0; i < NrT; i++) err = max(err, abs(xnew[i]  - aT[i]));
+
+        for (int i = 0; i < NrT; i++)  aT[i]  = xnew[i];
+
+        cout << "  t=" << t << "  Newton=" << niter
+             << "  err=" << err << endl;
+        if (err < tolNewton) break;
+        assert(err < 1.e10);
+    }
+
+    // ── Reconstruct and plot ──────────────────────────────────────
+    reconstruct(Trplot, Tbar, PhiT, aT, NrT)
+        
+    plot(Trplot,  dim=2, value=1, fill=1, cmm="ROM T   t="+t);
+
+    Tsnap[] = SnapT[sidx][];
+    interpolationerror(errinterp, Tsnap, PhiT, aT, NrT)
+    Tsnap[] += Tbar[]; 
+    pcmconvresidualerrors(errl2, resl2, Tpph, Tph, Trplot, Tsnap, SnapUx[sidx], SnapUy[sidx])
+    cout << "Time step " <<  sidx  <<  "   ||Tr - Th||_L2 = " << sqrt(errl2 / (sidx-1)) << 
+                                       "   ||Tr - Th||_L2 = " << sqrt(resl2 / (sidx-1)) <<  
+                                       "   ||ar - ah||_L2 = " << sqrt(errinterp / (sidx-1)) << endl;
+}
+cout << "=== ROM solve complete ===" << endl;
+errl2 = sqrt(errl2 / (sidx-1));
+resl2 = sqrt(resl2 / (sidx-1));
+errinterp = sqrt(errinterp / (sidx-1));
