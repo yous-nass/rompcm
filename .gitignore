@@ -10,4 +10,3 @@ dist/
 .ruff_cache/
 .coverage
 .ipynb_checkpoints/
-.virtual_documents/

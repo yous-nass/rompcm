@@ -1,6 +1,8 @@
 import numpy as np
+import matplotlib.pyplot as plt
 import torch as tr
 import torch.nn as nn
+from   typing import Tuple
 
 
 ################################################################

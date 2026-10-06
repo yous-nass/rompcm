@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.io import mmwrite
 import matplotlib.pyplot as plt
 import sys
 from pyfreefem import FreeFemRunner
@@ -78,7 +79,7 @@ def plot_snapshots(data1, data2, test_par, ref, label):
 	b = ax[1].tricontourf(x, y, data2[-1], levels=lev, cmap="jet")
 	fig.colorbar(b) 
 
-	ax[-1].set_title('difference', fontsize = 12)
+	ax[-1].set_title(f'difference', fontsize = 12)
 	ax[-1].set_aspect('equal')
 	c = ax[-1].tricontourf(x, y, data1[-1] - data2[-1], levels=lev, cmap="jet")
 	fig.colorbar(c) 

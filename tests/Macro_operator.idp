@@ -1,0 +1,71 @@
+/*
+A macro is an "alias" for a code sequence that will be replaced
+(syntaxical replacement) in the program when the name of the macro is used
+(see the example below)
+*/
+
+/* macro for the gradient = a vector of components [du/dx, du/dy] */
+macro grad(u) [dx(u),dy(u)]//
+
+/*The code sequence
+   ... int2d(Th)(grad(a)'*grad(b)) ...
+will be replaced (before compilation) by
+   ... int2d(Th)([dx(a),dy(a)]'*[dx(b),dy(b)])
+which is exactly 
+       \int_\Omega ((\nabla) a * (\nabla b))
+*/
+
+/* macro for the tensor (\nabla u) with u=[u1,u2] a vector 
+   # is the symbol for concatenation, u#1 => u1, u#2 => u2
+   the results is a 2*2 matrix
+*/ 
+macro Grad(u) [grad(u#1),grad(u#2)]//
+
+/* macro for the divergence of a vector u=[u1,u2] */
+macro div(u)(dx(u#1)+dy(u#2))//
+
+/* macro for u*(\nabla)(v), with v a scalar */
+macro ugrad(u,v)([u#1,u#2]'*grad(v))//
+
+/* macro for u*(\nabla)(v), with v=[v1,v2] a vector */
+macro UgradV(u,v) [ugrad(u,v#1),ugrad(u,v#2)]//
+
+/* Operators for the variational formulation of the 
+   Navier-Stokes equations (see text)
+   the operator : is the (second order) tensor contraction */
+macro a(u,v)((Grad(u):Grad(v)))//
+macro b(u,q)(-div(u)*q)//
+macro c(w,Z,v)(conv*UgradV(w,Z)'*[v#1,v#2])//
+
+/* macros for stretching the mesh (used for the initial mesh) */
+macro M2zones(t,Rmin,Rmax,Rsm)( Rmin+(Rmax-Rmin)/2*(1+tanh((t-0.5)/Rsm)/tanh(1./(2*Rsm))) )//
+macro M2zonesCarre(t,Rmin,Rmax,RT1,RT2)( (t <= (RT1/(Rmax-Rmin))) ? M2zones(t*(Rmax-Rmin)/(RT1-Rmin),Rmin,RT1,0.25) 
+: ((t >=(RT2/(Rmax-Rmin))) ? M2zones((t*(Rmax-Rmin)-RT2)/(Rmax-RT2),RT2,Rmax,0.25) : (RT1+(t*(Rmax-Rmin)-RT1))) )//
+
+/* macro for the L2 norm of the residual (u-v) */
+macro residL2norm(Th,Dunity,u,v)(int2d(Th)(Dunity*pow(u-v,2)))//
+
+/* macros for generic smoothing functions */
+macro Fsmooth(T,fs,fl,fas,Ts,Rs)(fl + 0.5*(fs-fl)*(1+tanh(fas*((Ts-T)/Rs))))//
+macro dFsmooth(T,fs,fl,as,Ts,Rs)(-0.5*(fs-fl)*as/Rs/pow(cosh(as*((Ts-T)/Rs)),2))//
+
+// real Enths=0,Enthl=1./Ste;
+// real Enthas = 1 ;
+// real EnthRs = epsi, EnthTs = Tf+epsi;
+
+/* macros for the enthalpy related functions and their derivatives */
+macro S(T)(Fsmooth(T,Enths,Enthl,Enthas,EnthTs,EnthRs))//
+macro Sadapt(T)(Fsmooth(T,Enths,Enthl,Enthas,MeshTS,MeshRs))//
+macro dS(T)(dFsmooth(T,Enths,Enthl,Enthas,EnthTs,EnthRs))//
+
+/* macros for the mushy region (see below) */
+macro Fmushy(T)(Fsmooth(T,CKs,CKl,CKas,CKTs,CKRs))// 
+macro dFmushy(T)(dFsmooth(T,CKs,CKl,CKas,CKTs,CKRs))// 
+
+/* macros for the Carman-Kozeny penalty term */
+macro Amushy(T)(-CCK * pow(1.-Fmushy(T),2) / ( pow(Fmushy(T),3)+bmushy ))//
+macro dAmushy(T)(2.*dFmushy(T)*(CCK*(1.-Fmushy(T))-1.5*Amushy(T)*pow(Fmushy(T),2))/(pow(Fmushy(T),3)+bmushy))// 
+
+/* macros for the thermal conductivity (water only) */
+macro Kon(T)(Fsmooth(T,ks,kl,Kas,KTs,KRs))//
+macro dKon(T)(dFsmooth(T,ks,kl,Kas,KTs,KRs))//
