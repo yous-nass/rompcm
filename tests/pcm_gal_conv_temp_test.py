@@ -1,5 +1,5 @@
 from pyfreefem import FreeFemRunner
-from rompcm.paths import DATADIR, TESTSDIR, SRCDIR, podconvTbasis, podconvUbasis, podconvVbasis
+from rompcm.paths import DATADIR, TESTSDIR, SRCDIR, podconvTbasis
 import pytest
 
 

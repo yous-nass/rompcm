@@ -1,6 +1,5 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import pytest
 
 from rompcm.paths import DATADIR
 from rompcm.sst_snap import SST
@@ -80,7 +79,7 @@ plt.semilogy(1 - np.cumsum(gpod.S[:]**2) /  np.sum(gpod.S[:]**2), 'o')
 #plt.ylim([5.e-10, 0.1])
 plt.xlim([-1, 50])
 plt.xlabel('r')
-plt.ylabel(f'Cummulative energy')
+plt.ylabel('Cummulative energy')
 plt.legend(["SVD(T)", "SVD(X)"])
 plt.grid()
 plt.show()

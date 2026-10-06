@@ -1,6 +1,5 @@
 import pickle
 import numpy as np
-import os, sys
 
 from rompcm.paths import podcond, podconv, rbfcond, rbfconv
 from rompcm.tools import estimator_cond, estimator_conv_temperature

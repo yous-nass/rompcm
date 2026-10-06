@@ -13,7 +13,7 @@ dependencies = [
     "numpy",
     "scipy",
     "matplotlib",
-    "pyffem"
+    "pyfreefem"
 ]
 
 [project.optional-dependencies]
