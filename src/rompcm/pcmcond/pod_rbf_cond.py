@@ -1,17 +1,14 @@
 import numpy as np
-import matplotlib.pyplot as plt
 import sys
-import pickle
-import time
 
 import os
 
-from mpi4py import MPI
+
 from multiprocessing import Pool
 
 sys.path.append("..") 
 
-from rompcm.pod_basis import POD, IncrementalPOD, ReducedPOD
+from rompcm.pod_basis import POD, IncrementalPOD
 from rompcm.pod_rbf import RBF_Explicit
 from rompcm.tools import estimator_cond, init_worker, greedy_chunk	
 
@@ -34,7 +31,7 @@ class POD_RBF_Trainer:
 		elif method=="PIPOD":
 			self.pod = IncrementalPOD(eps_init, eps_project, atol)
 		else:
-			self.pod = ReducedPOD(eps_init, eps_project, atol)
+			raise ValueError(f"Method must be POD or PIPOD, got: {method}")
 
 		self.rbf = RBF_Explicit(self.kernels, has_normalization)
 
@@ -114,22 +111,6 @@ class POD_RBF_Trainer:
 			train_indices.sort()
 			self.udate_POD(new_index, train_indices, plot_modes)
 			
-		
-		if False:
-			iters = range(1, len(greedy_errors)+1)
-			greedy_errors = np.squeeze(np.array(greedy_errors))
-			
-			plt.figure()
-			plt.semilogy(iters, greedy_errors[:,0], marker='o', label="$\mathcal{E}_2$")
-			plt.semilogy(iters, greedy_errors[:,1], marker='*', label="$\mathcal{R}_2$")
-			plt.semilogy(iters, greedy_errors[:,2], marker='x', label="$\mathcal{I}_2$")
-			plt.xlabel("Greedy Iteration")
-			plt.ylabel("Error")
-			plt.title("Greedy Error Decay")
-			plt.legend()
-			plt.grid(True)
-			plt.show()
-			return train_indices
 
 
 	# ----------------- multiprocessing-parallel Greedy iteration -----------------------
@@ -178,89 +159,3 @@ class POD_RBF_Trainer:
 			if len(candidates)==0:
 				print("all parameters are used")
 				candidates = train_indices
-
-
-
-
-
-	# ----------------- MPI-parallel Greedy selection -----------------
-	def greedy_mpi(self, train_indices, Nt_pred, dt, tol=1., plot_modes=False):
-		comm = MPI.COMM_WORLD
-		rank = comm.Get_rank()
-		size = comm.Get_size()
-		
-		if rank == 0:
-			self.init_POD(train_indices, plot_modes)
-
-		cunt = 1
-		all_indices = list(range(len(self.samples_pars)))
-		while True:
-			# 1. Sync the current ROM state to all workers
-			# We pack everything into one dictionary to minimize latency
-			rom = None
-			if rank == 0:
-				rom = {
-					'S':self.pod.S,
-					'phi': self.pod.phi,
-					'mean': self.pod.samples_mean,
-					'w': self.rbf.coeffs,
-					'mu_t': self.rbf.mu_t,
-					'train_indices': train_indices
-				}
-			rom = comm.bcast(rom, root=0)
-			# Update the local RBF and POD objects
-			self.rbf.coeffs = rom['w']
-			self.rbf.mu_t = rom['mu_t']
-			self.pod.S = rom["S"]
-			self.pod.phi = rom['phi']
-			self.pod.samples_mean = rom['mean']
-
-			# Each rank determines its own candidates
-			my_candidates = [i for i in all_indices if i not in rom['train_indices']]
-			
-			# Stop if no candidates left
-			if not my_candidates: break
-
-			# Parallel prediction + error computation
-			indices_per_rank = my_candidates[rank::size]
-			l2_err_partial = np.zeros((len(indices_per_rank), 3))
-			for idx, i in enumerate(indices_per_rank):
-				V_r = []
-				theta = (self.samples[i] - self.pod.samples_mean) @ self.pod.phi
-				theta_r, l2_err_partial[idx,-1]= self.rbf.predict_theta(self.samples_pars[i], Nt_pred, theta)
-				V_r = theta_r @ self.pod.phi.T + self.pod.samples_mean
-				l2_err_partial[idx,:-1] = estimator_cond( V_r, self.samples[i], self.samples_pars[i], dt)
-
-			local_worst_val = -1.0
-			local_best_record = ( -1.0, [0, 0, 0], -1 ) # (criterion, full_vector, original_index)
-
-			for idx, i in enumerate(indices_per_rank):
-				err_vec = l2_err_partial[idx] # This is your [err0, err1, err2]
-				
-				# Change err_vec[1] to 0 or 2 depending on which error determines "worst"
-				if err_vec[1] > local_worst_val:
-					local_worst_val = err_vec[1]
-					local_best_record = (local_worst_val, list(err_vec), i)
-
-			# 2. Use reduce to find the global worst across all ranks
-			# Python's tuple comparison: (a, b, c) > (d, e, f) if a > d
-			global_worst_record = comm.reduce(local_best_record, op=MPI.MAX, root=0)
-
-			if rank == 0:
-				# Unpack the winning record
-				_, errors, new_index = global_worst_record
-				
-				print(f"\nGreedy iter {cunt}, Modes: {self.pod.phi.shape[1]} Errors:: {errors}") # This prints all 3 values
-				#print(f"Criterion (Error[{1}]): {max_criterion}")
-
-				# Stop criterion (using the specific error value)
-				if errors[1] < tol:
-					print("Stopping criterion reached.")
-					
-				# Update POD
-				train_indices.append(int(new_index))
-				train_indices.sort()
-				self.udate_POD(new_index, train_indices, plot_modes)
-				cunt += 1
-				
-			train_indices = comm.bcast(train_indices, root=0)

@@ -13,7 +13,7 @@ dependencies = [
     "numpy",
     "scipy",
     "matplotlib",
-    "pyffem"
+    "pyfreefem"
 ]
 
 [project.optional-dependencies]
@@ -32,7 +32,8 @@ rompcm = ["*.edp", "**/*.edp"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
-    "slow: tests longs (désactivés par défaut en CI : -m 'not slow')",
+    "slow: long tests (excluded in CI)",
+    "freefem: tests needing the FreeFEM executable",
 ]
 
 [tool.ruff]
