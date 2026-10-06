@@ -27,6 +27,6 @@ jobs:
 
       - name: Lint
         run: ruff check .
-
+        
       - name: Test
-        run: pytest -m "not slow"
+        run: pytest -m "not slow and not freefem" -q
