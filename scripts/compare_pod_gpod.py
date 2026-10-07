@@ -15,10 +15,13 @@ import numpy as np
 from rompcm.pod_basis import POD
 from rompcm.sst_snap import SST
 
-EPS = 0.01
+from rompcm.analytical import EPS, front_snapshots
+...
+# x, t, snaps = front_snapshots()
+
 TOL = 5e-3
 
-
+"""
 def st(t):
     return 0.001330 + 0.039757 * np.sqrt(t)
 
@@ -32,7 +35,7 @@ def build_snapshots(mu=1.0):
     t = np.arange(2.1, 51.7, 0.5, dtype=float)
     snaps = np.stack([f(mu, x, tt) for tt in t])          # (Nt, Nx)
     return x, t, snaps
-
+"""
 
 def phi_of(X):
     pod = POD(eps=1.e-12, center=False)
@@ -69,11 +72,11 @@ def main():
     if not args.show:
         plt.switch_backend("Agg")
 
-    x, t, snaps = build_snapshots()
+    x, t, snaps = front_snapshots()
 
     # --- GPOD: map snapshots to the self-similar coordinate xi -------------
     sst = SST(eps=EPS)
-    sst.fit(snaps, x, t)
+    _   = sst.fit(snaps, x, t)
     zeta = x / sst.x_fit[-1]
     Xb = sst.backward(snaps, x, zeta)
 

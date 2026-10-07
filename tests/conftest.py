@@ -1,6 +1,20 @@
-import numpy as np
 import pytest
 
+from rompcm.analytical import front_snapshots
+
+
+@pytest.fixture(scope="session")
+def grid():
+    x, t, _ = front_snapshots()
+    return x, t
+
+
+@pytest.fixture(scope="session")
+def snapshots():
+    return front_snapshots()[2]            # (Nt, Nx)
+
+"""
+from rompcm.
 EPS = 0.01
 
 def st(t):
@@ -20,6 +34,8 @@ def grid():
 
 @pytest.fixture(scope="session")
 def snapshots(grid):
-    """Physical snapshots, shape (Nx, Nt), for mu = 1."""
+    ###Physical snapshots, shape (Nx, Nt), for mu = 1.
     x, t = grid
     return np.stack([f(1.0, x, tt) for tt in t], axis=0)
+
+"""
