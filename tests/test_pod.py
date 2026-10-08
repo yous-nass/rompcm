@@ -1,11 +1,7 @@
 import numpy as np
 
-
 from rompcm.pod_basis import POD
 from rompcm.sst_snap import SST
-
-
-
 
 def test_theta_reconstructs_snapshots(snapshots):
 	samples = snapshots[None, :, :]

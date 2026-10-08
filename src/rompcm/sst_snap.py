@@ -26,7 +26,7 @@ class SST:
 
 	def __init__(self, eps:float=0.009):
 		self.eps = eps
-
+		self.x_fit = None
 
 	def fit(self, snapshots:np.ndarray, x:np.ndarray, t:np.ndarray) -> "SST":
 		"""
@@ -59,7 +59,6 @@ class SST:
 			x_left, x_right = x[id - 1], x[id]
 			y_left, y_right = row[id - 1], row[id]
 
-
 			if y_right == y_left:
 				st[i] = x_right
 			else:
@@ -67,14 +66,22 @@ class SST:
 				st[i] = x_left + frac * (x_right - x_left)
 		beta, x0 = np.polyfit(np.sqrt(t), st, 1)
 		print(f"Fitted parameters: x_0 = {x0:.6f}, beta = {beta:.6f}")
-		self.x_fit = np.asarray(x0 + beta * np.sqrt(t))
-		return self
+		x_fit = np.asarray(x0 + beta * np.sqrt(t))
+		self.x_fit = x_fit
+		return x_fit
 
-    
-	def backward(self, X, x, xi):
+	def _xfit(self, x_fit):
+		x_fit = self.x_fit if x_fit is None else x_fit
+		if x_fit is None:
+			raise ValueError("x_fit missing: call fit() or pass x_fit explicitly")
+		return np.asarray(x_fit, float)
+	
+	
+	def backward(self, X, x, xi, x_fit=None):
 		Ts = []
-		for k in range(len(self.x_fit)):
-			xi_k = x / self.x_fit[k]
+		st = self._xfit(x_fit)
+		for k in range(len(st)):
+			xi_k = x / st[k]
 			order = np.argsort(xi_k)
 			f = interp1d(xi_k[order], X[k, order],
 					kind='cubic',
@@ -84,10 +91,11 @@ class SST:
 		return np.asarray(Ts)
 
 
-	def forward(self, X, xi, x):
+	def forward(self, X, xi, x, x_fit=None):
 		Ts = []
-		for k in range(len(self.x_fit)):
-			xi_k = xi * self.x_fit[k] 
+		st = self._xfit(x_fit)
+		for k in range(len(st)):
+			xi_k = xi * st[k] 
 			order = np.argsort(xi_k)
 			f = interp1d(xi_k[order], X[k, order],
 					kind='cubic',
@@ -97,16 +105,17 @@ class SST:
 		return np.asarray(Ts)
 	
 
-	def backward2D(self, T_flat, x, xi, idx):
+	def backward2D(self, T_flat, x, xi, idx, x_fit=None):
 		"""
 		T_flat: (Ns, N_nodes) physical field on flat mesh nodes
 		Returns: (Ns, Ny, len(xi)) self-similar field, full y-dependence retained
 		"""
+		st = self._xfit(x_fit)
 		Ny, _ = idx.shape
-		out = np.zeros((len(self.x_fit), Ny, len(xi)))
-		for k in range(len(self.x_fit)):
+		out = np.zeros((len(st), Ny, len(xi)))
+		for k in range(len(st)):
 			T_grid = T_flat[k][idx]              # (Ny, Nx)
-			xi_k = x / self.x_fit[k]
+			xi_k = x / st[k]
 			order = np.argsort(xi_k)
 			f = interp1d(xi_k[order], T_grid[:, order], axis=-1,
 					 kind='cubic', bounds_error=False,
@@ -115,16 +124,17 @@ class SST:
 		return out
 
 
-	def forward2D(self, Theta, xi, x, idx):
+	def forward2D(self, Theta, xi, x, idx, x_fit=None):
 		"""
 		Theta: (Ns, Ny, len(xi)) self-similar field
 		Returns: (Ns, N_nodes) reconstructed physical field on flat mesh
 		"""
-		Ny, Nx = idx.shape
+		#Ny, Nx = idx.shape
 		N_nodes = idx.max() + 1
-		out = np.zeros((len(self.x_fit), N_nodes))
-		for k in range(len(self.x_fit)):
-			xi_k = xi * self.x_fit[k]
+		st = self._xfit(x_fit)
+		out = np.zeros((len(st), N_nodes))
+		for k in range(len(st)):
+			xi_k = xi * st[k]
 			order = np.argsort(xi_k)
 			f = interp1d(xi_k[order], Theta[k][:, order], axis=-1,
 					 kind='cubic', bounds_error=False,
