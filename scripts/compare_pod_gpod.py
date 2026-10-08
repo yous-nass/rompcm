@@ -16,7 +16,8 @@ from rompcm.pod_basis import POD
 from rompcm.sst_snap import SST
 
 from rompcm.analytical import EPS, front_snapshots
-...
+
+
 # x, t, snaps = front_snapshots()
 
 TOL = 5e-3

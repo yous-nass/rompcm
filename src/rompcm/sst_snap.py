@@ -129,7 +129,7 @@ class SST:
 		Theta: (Ns, Ny, len(xi)) self-similar field
 		Returns: (Ns, N_nodes) reconstructed physical field on flat mesh
 		"""
-		Ny, Nx = idx.shape
+		#Ny, Nx = idx.shape
 		N_nodes = idx.max() + 1
 		st = self._xfit(x_fit)
 		out = np.zeros((len(st), N_nodes))

@@ -11,3 +11,4 @@ dist/
 .coverage
 .ipynb_checkpoints/
 .virtual_documents/
+models/

@@ -21,3 +21,10 @@ def front_snapshots(mu=1.0, nx=121):
     x = np.linspace(0.0, 1.0, nx)
     t = np.arange(2.1, 51.7, 0.5, dtype=float)
     return x, t, front(mu, x, t)
+
+
+def front_snapshots_2d(mu=1.0, nx=121, ny=41):
+    """Same 1D front copied along y in [0, 1]. Returns x, y, t, snaps (Nt, Nx, Ny)."""
+    x, t, snaps = front_snapshots(mu, nx)
+    y = np.linspace(0.0, 1.0, ny)
+    return x, y, t, np.repeat(snaps[:, :, None], ny, axis=2)
